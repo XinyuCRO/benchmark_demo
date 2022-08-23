@@ -12,6 +12,8 @@ export class EVMMonitor {
 
   isFetching: boolean;
 
+  onNewBlock?: (block: BlockTransactionString) => void;
+
   constructor(provider: string) {
     this.web3 = new Web3(provider);
   }
@@ -26,7 +28,9 @@ export class EVMMonitor {
 
   async start() {
     this.lastBlockNumber = await this.getBlockNumber();
-    Logger.log(`Start fetching block info from: ${this.lastBlockNumber}`);
+    Logger.log(
+      `[monitor] Start fetching block info from: ${this.lastBlockNumber}`,
+    );
 
     this.timer = setInterval(async () => {
       if (this.isFetching) {
@@ -38,12 +42,13 @@ export class EVMMonitor {
         try {
           const block = await this.getBlockInfo(this.lastBlockNumber);
           Logger.log(
-            `Block: ${this.lastBlockNumber} ${block.hash}, timestamp: ${block.timestamp}, tx count: ${block.transactions.length}`,
+            `[Monitor] Block: ${this.lastBlockNumber}, timestamp: ${block.timestamp}, tx count: ${block.transactions.length}`,
           );
+          this.onNewBlock?.(block);
           this.lastBlockNumber++;
         } catch (error) {
           Logger.error(
-            `fetch block info ${this.lastBlockNumber} failed, error: ${error}, retrying......`,
+            `[Monitor] fetch block info ${this.lastBlockNumber} failed, error: ${error}, retrying......`,
           );
           await delay(300);
         }

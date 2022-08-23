@@ -1,10 +1,16 @@
 import { InfluxDB, Point, HttpError } from '@influxdata/influxdb-client';
-import { SetupAPI } from '@influxdata/influxdb-client-apis';
+import {
+  BucketsAPI,
+  OrgsAPI,
+  SetupAPI,
+} from '@influxdata/influxdb-client-apis';
 import { url, username, password, org, bucket, token } from './env';
 import { hostname } from 'node:os';
+import { Logger } from '@nestjs/common';
+const influxDB = new InfluxDB({ url, token });
 
 export async function onBoardInfluxDB() {
-  console.log('*** ONBOARDING ***');
+  Logger.log('[influxDB] ONBOARDING');
   const setupApi = new SetupAPI(new InfluxDB({ url }));
   try {
     const { allowed } = await setupApi.getSetup();
@@ -18,37 +24,61 @@ export async function onBoardInfluxDB() {
           token,
         },
       });
-      console.log(`InfluxDB '${url}' is now onboarded.`);
+      Logger.log(`[influxDB] '${url}' is now onboarded.`);
     } else {
-      console.log(`InfluxDB '${url}' has been already onboarded.`);
+      Logger.log(`[influxDB] '${url}' has been already onboarded.`);
     }
-    console.log('\nFinished SUCCESS');
   } catch (e) {
-    console.error(e);
-    console.log('\nFinished ERROR');
+    Logger.error(e);
   }
 }
 
-export async function writePoint() {
-  console.log('*** WRITE POINTS ***');
+export async function recreateBucket(name = bucket) {
+  const orgsAPI = new OrgsAPI(influxDB);
+  const organizations = await orgsAPI.getOrgs({ org });
+  if (!organizations || !organizations.orgs || !organizations.orgs.length) {
+    Logger.error(`[influxDB] No organization named "${org}" found!`);
+  }
+  const orgID = organizations.orgs[0].id;
+
+  const bucketsAPI = new BucketsAPI(influxDB);
+  try {
+    const buckets = await bucketsAPI.getBuckets({ orgID, name });
+    if (buckets && buckets.buckets && buckets.buckets.length) {
+      Logger.log(`[influxDB] Bucket named "${name}" already exists"`);
+      const bucketID = buckets.buckets[0].id;
+      Logger.log(
+        `[influxDB] Delete Bucket "${name}" identified by "${bucketID}" `,
+      );
+      await bucketsAPI.deleteBucketsID({ bucketID });
+    }
+  } catch (e) {
+    if (e instanceof HttpError && e.statusCode == 404) {
+      // OK, bucket not found
+    } else {
+      throw e;
+    }
+  }
+
+  // creates a bucket, entity properties are specified in the "body" property
+  const bucket = await bucketsAPI.postBuckets({
+    body: {
+      orgID,
+      name,
+      retentionRules: [{ everySeconds: 0, type: 'expire' }],
+    },
+  });
+  Logger.log(
+    `[influxDB] Bucket created. ID: ${bucket.id}, Name: ${bucket.name}`,
+  );
+}
+export async function writePoints(points: Point[]) {
   // create a write API, expecting point timestamps in nanoseconds (can be also 's', 'ms', 'us')
   const writeApi = new InfluxDB({ url, token }).getWriteApi(org, bucket, 'ns');
   // setup default tags for all writes through this API
   writeApi.useDefaultTags({ location: hostname() });
 
-  // write point with the current (client-side) timestamp
-  const point1 = new Point('temperature')
-    .tag('example', 'write.ts')
-    .floatField('value', 20 + Math.round(100 * Math.random()) / 10);
-  writeApi.writePoint(point1);
-  console.log(` ${point1}`);
-  // write point with a custom timestamp
-  const point2 = new Point('temperature')
-    .tag('example', 'write.ts')
-    .floatField('value', 10 + Math.round(100 * Math.random()) / 10)
-    .timestamp(new Date()); // can be also a number, but in writeApi's precision units (s, ms, us, ns)!
-  writeApi.writePoint(point2);
-  console.log(` ${point2.toLineProtocol(writeApi)}`);
+  writeApi.writePoints(points);
 
   // WriteApi always buffer data into batches to optimize data transfer to InfluxDB server.
   // writeApi.flush() can be called to flush the buffered data. The data is always written
@@ -58,12 +88,11 @@ export async function writePoint() {
   // close() flushes the remaining buffered data and then cancels pending retries.
   try {
     await writeApi.close();
-    console.log('FINISHED ... now try ./query.ts');
+    Logger.log('[influxDB] write success');
   } catch (e) {
-    console.error(e);
+    Logger.error(e);
     if (e instanceof HttpError && e.statusCode === 401) {
-      console.log('Run ./onboarding.js to setup a new InfluxDB database.');
+      Logger.error('[influxDB] Setup a new InfluxDB database first');
     }
-    console.log('\nFinished ERROR');
   }
 }
