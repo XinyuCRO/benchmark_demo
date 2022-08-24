@@ -2,7 +2,7 @@ import { Logger, SerializeOptions } from '@nestjs/common';
 import { delay } from 'src/utils/delay';
 import { clearInterval } from 'timers';
 import Web3 from 'web3';
-import { BlockTransactionString } from 'web3-eth';
+import { BlockTransactionObject } from 'web3-eth';
 
 export class EVMMonitor {
   web3: Web3;
@@ -12,7 +12,7 @@ export class EVMMonitor {
 
   isFetching: boolean;
 
-  onNewBlock?: (block: BlockTransactionString) => void;
+  onNewBlock?: (block: BlockTransactionObject) => void;
 
   constructor(provider: string) {
     this.web3 = new Web3(provider);
@@ -22,8 +22,8 @@ export class EVMMonitor {
     return await this.web3.eth.getBlockNumber();
   }
 
-  async getBlockInfo(blockNumber: number): Promise<BlockTransactionString> {
-    return await this.web3.eth.getBlock(blockNumber);
+  async getBlockInfo(blockNumber: number): Promise<BlockTransactionObject> {
+    return await this.web3.eth.getBlock(blockNumber, true);
   }
 
   async start() {

@@ -29,6 +29,25 @@ async function bootstrap() {
       .uintField('value', block.transactions.length)
       .timestamp(new Date(Number(block.timestamp) * 1000));
     await writePoints([point]);
+
+    const points: Point[] = [];
+    for (const tx of block.transactions) {
+      const point = new Point('transaction')
+        .tag('benchmark', 'monitor')
+        .stringField('blockHush', tx.blockHash)
+        .uintField('blockNumber', tx.blockNumber)
+        .stringField('from', tx.from)
+        .stringField('to', tx.to)
+        .uintField('gas', tx.gas)
+        .stringField('gasPrice', tx.gasPrice)
+        .uintField('nonce', tx.nonce)
+        .stringField('hash', tx.hash)
+        .stringField('value', tx.value)
+        .timestamp(new Date(Number(block.timestamp) * 1000));
+
+      points.push(point);
+    }
+    await writePoints(points);
   };
 }
 
